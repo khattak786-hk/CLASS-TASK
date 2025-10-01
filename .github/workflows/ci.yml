@@ -1,0 +1,50 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: docker build -t e-learning:latest .
+
+  deploy:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Stop and remove old container (if exists)
+        run: |
+          CONTAINER=$(docker ps -aq --filter "name=e-learning-container")
+          if [ -n "$CONTAINER" ]; then
+            echo "Stopping and removing old container..."
+            docker rm -f $CONTAINER
+          else
+            echo "No existing container to remove."
+          fi
+
+      - name: Run container
+        run: docker run -d -p 8083:8083 --name e-learning-container e-learning:latest
+
+  test:
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Wait for container startup
+        run: sleep 5
+
+      - name: Test container response
+        run: |
+          if curl -s http://localhost:8083 | grep -q "<html"; then
+            echo "✅ Test passed: Container is serving content."
+          else
+            echo "❌ Test failed: Container did not respond correctly."
+            echo "===== Container Logs ====="
+            docker logs e-learning-container || true
+            exit 1
+          fi
